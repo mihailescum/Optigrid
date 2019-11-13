@@ -11,7 +11,10 @@ class Optigrid:
         self.q = q
         self.max_cut_score = max_cut_score
         self.noise_level = noise_level
+
         self.root = None
+        self.cluster = None
+        self.num_clusters = -1
 
         self.kde_kernel = kde_kernel
         self.kde_bandwidth = kde_bandwidth
@@ -26,30 +29,38 @@ class Optigrid:
         data_count = len(data)
         cluster_indices = np.array(range(data_count))
 
-        grid, cluster = self._iteration(data=data, parent_grid=None, cluster_indices=cluster_indices, percentage_of_values=1)
+        grid, clusters = self._iteration(data=data, cluster_indices=cluster_indices, percentage_of_values=1, current_cluster = [-1])
         self.root = grid
+        self.clusters = clusters
+        self.num_clusters = len(clusters)
 
-    def _iteration(self, parent_grid, data, cluster_indices, percentage_of_values):
+        if self.verbose:
+            print("Optigrid found {} clusters.".format(self.num_clusters))
+
+    def _iteration(self, data, cluster_indices, percentage_of_values, current_cluster):
         cuts_iteration = []
         for i in range(self.d): # First create all best cuts
             cuts_iteration += self._create_cuts_kde(data, cluster_indices, current_dimension=i, percentage_of_values=percentage_of_values)
         
         if not cuts_iteration:
-            return None, [cluster_indices]
+            current_cluster[0] += 1
+            return GridLevel(cutting_planes=None, cluster_index=current_cluster[0]), [cluster_indices]
     
         cuts_iteration = sorted(cuts_iteration, key=lambda x: x[2])[:self.q] # Sort the cuts based on the density at the minima and select the q best ones
-        grid = GridLevel(cuts_iteration)
+        grid = GridLevel(cutting_planes=cuts_iteration, cluster_index=None)
         
         grid_data = self._fill_grid(data, cluster_indices, cuts_iteration) # Fill the subgrid based on the cuts
     
         result = []
-        for cluster in grid:
+        for i, cluster in enumerate(grid_data):
             if cluster.size==0:
                 continue
             if self.verbose:
                 print("In current cluster: {:.2f}% of datapoints".format(percentage_of_values*len(cluster)/len(cluster_indices)*100))
-            iteration_result = self._iteration(data=data, cluster_indices=cluster, percentage_of_values=percentage_of_values*len(cluster)/len(cluster_indices)) # Run Optigrid on every subgrid
-        
+            subgrid, subresult = self._iteration(data=data, cluster_indices=cluster, percentage_of_values=percentage_of_values*len(cluster)/len(cluster_indices), current_cluster=current_cluster) # Run Optigrid on every subgrid
+            grid.add_subgrid(i, subgrid)
+            result.append(subresult)
+
         return grid, result
 
     def _fill_grid(self, data, cluster_indices, cuts):
@@ -113,3 +124,20 @@ class Optigrid:
         grid = np.linspace([min_val], [max_val], self.kde_grid_ticks)
         log_dens = kde.score_samples(grid)
         return grid, np.exp(log_dens) * percentage_of_values
+
+    def score_samples(self, samples):
+        return [self._score_sample(sample) for sample in samples]
+
+    def _score_sample(self, sample):
+        if self.root is None:
+            raise Exception("Optigrid needs to be fitted to a dataset first.")
+
+        current_grid_level = self.root
+        while current_grid_level.cluster_index is None:
+            sub_level = current_grid_level.get_sublevel(sample)
+            if sub_level is None:
+                return None
+            
+            current_grid_level = sub_level
+
+        return current_grid_level.cluster_index

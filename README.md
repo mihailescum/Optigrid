@@ -1,0 +1,5 @@
+This is a Python implementation of the Optigrid algorithm described in _"Optimal Grid-Clustering: Towards Breaking the Curse of Dimensionality in High-Dimensional Clustering"_ published by Hinneburg and Keim in: "Proceedings of the 25th International Conference on Very Large Databases", 1999, pp. 506-517
+
+This implementation is limited to projections to the coordinate axes and uses the scikit-learn Kernel Density estimation to determine the best cutting planes. In contrary to the article we use a maximum cut score instead of a minimum one, because the score is just the density at the cutting point, and we want to keep that as low as possible.
+
+An example can be found in the _demo.py_ file. To use the algorithm in your project, just copy the files _optigrid.py_ and _grid_level.py_ into your working tree.

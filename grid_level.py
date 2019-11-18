@@ -32,7 +32,7 @@ class GridLevel:
             datapoint (ndarray): The datapoint
         
         Returns:
-            GridLevel: The subgrid or None if it belongs to no subgrid, meaning the point is an outlier.
+            GridLevel: The subgrid or -1 if it belongs to no subgrid, meaning the point is an outlier.
         """
 
         if datapoint is None:
@@ -44,6 +44,6 @@ class GridLevel:
                 grid_index += 2 ** i
 
         if not grid_index in self.subgrid_indices:
-            return None
+            return -1
 
         return self.subgrids[self.subgrid_indices.index(grid_index)]

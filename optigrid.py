@@ -1,12 +1,12 @@
 import numpy as np
-from sklearn.neighbors import KernelDensity
+from scipy.stats import gaussian_kde
 
 from grid_level import GridLevel
 
 class Optigrid:
     """ Implementation of the Optigrid Algorithm described in "Optimal Grid-Clustering: Towards Breaking the Curse of Dimensionality in High-Dimensional Clustering" by Hinneburg and Keim """
 
-    def __init__(self, d, q, max_cut_score, noise_level, kde_kernel='gaussian', kde_bandwidth = 0.1, kde_grid_ticks=100, kde_num_samples=15000, kde_atol=1E-6, kde_rtol=1E-4, verbose=False):
+    def __init__(self, d, q, max_cut_score, noise_level, kde_bandwidth = None, kde_grid_ticks=100, kde_num_samples=15000, kde_atol=1E-6, kde_rtol=1E-4, verbose=False):
         """ 
         Parameters:
             d (int): Dimension of the data
@@ -23,7 +23,6 @@ class Optigrid:
         self.clusters = None
         self.num_clusters = -1
 
-        self.kde_kernel = kde_kernel
         self.kde_bandwidth = kde_bandwidth
         self.kde_grid_ticks = kde_grid_ticks
         self.kde_num_samples = kde_num_samples
@@ -32,7 +31,7 @@ class Optigrid:
 
         self.verbose = verbose
 
-    def fit(self, data):
+    def fit(self, data, weights=None):
         """ Find all clusters in the data. Clusters are stored as indices pointing to the passed data, i.e. if '10' is in cluster '0' means, that data[10] is in cluster 0.
 
         Parameters:
@@ -42,7 +41,7 @@ class Optigrid:
         data_count = len(data)
         cluster_indices = np.array(range(data_count))
 
-        grid, clusters = self._iteration(data=data, cluster_indices=cluster_indices, percentage_of_values=1, last_cluster_name = [-1])
+        grid, clusters = self._iteration(data=data, weights=weights, cluster_indices=cluster_indices, percentage_of_values=1, last_cluster_name = [-1])
         self.root = grid
         self.clusters = clusters
         self.num_clusters = len(clusters)
@@ -50,7 +49,7 @@ class Optigrid:
         if self.verbose:
             print("Optigrid found {} clusters.".format(self.num_clusters))
 
-    def _iteration(self, data, cluster_indices, percentage_of_values, last_cluster_name):
+    def _iteration(self, data, weights, cluster_indices, percentage_of_values, last_cluster_name):
         """ Do one recursive step of the optigrid algorithm.
 
         Parameters:
@@ -66,7 +65,7 @@ class Optigrid:
 
         cuts_iteration = []
         for i in range(self.d): # First create all best cuts
-            cuts_iteration += self._create_cuts_kde(data, cluster_indices, current_dimension=i, percentage_of_values=percentage_of_values)
+            cuts_iteration += self._create_cuts_kde(data, cluster_indices, current_dimension=i, percentage_of_values=percentage_of_values, weights=weights)
         
         if not cuts_iteration:
             last_cluster_name[0] += 1
@@ -86,7 +85,7 @@ class Optigrid:
                 continue
             if self.verbose:
                 print("In current cluster: {:.2f}% of datapoints".format(percentage_of_values*len(cluster)/len(cluster_indices)*100))
-            subgrid, subresult = self._iteration(data=data, cluster_indices=cluster, percentage_of_values=percentage_of_values*len(cluster)/len(cluster_indices), last_cluster_name=last_cluster_name) # Run Optigrid on every subgrid
+            subgrid, subresult = self._iteration(data=data, weights=weights, cluster_indices=cluster, percentage_of_values=percentage_of_values*len(cluster)/len(cluster_indices), last_cluster_name=last_cluster_name) # Run Optigrid on every subgrid
             grid.add_subgrid(i, subgrid)
             result += subresult
 
@@ -112,7 +111,7 @@ class Optigrid:
 
         return [cluster_indices[grid_index==key] for key in range(2**num_cuts)]
     
-    def _create_cuts_kde(self, data, cluster_indices, current_dimension, percentage_of_values):
+    def _create_cuts_kde(self, data, cluster_indices, current_dimension, percentage_of_values, weights):
         """ Find the best cuts in the specified dimension by estimating the data density using kde.
 
         Parameters:
@@ -125,7 +124,7 @@ class Optigrid:
             list: q best cuts in the format (position, dimension, cutting_score)
         """
 
-        grid, kde = self._estimate_distribution(data, cluster_indices, current_dimension, percentage_of_values=percentage_of_values) 
+        grid, kde = self._estimate_distribution(data, cluster_indices, current_dimension, percentage_of_values=percentage_of_values, weights=weights) 
         kde = np.append(kde, 0)
 
         peaks = self._find_peaks_distribution(kde)      
@@ -182,7 +181,7 @@ class Optigrid:
             current = next
         return peaks
 
-    def _estimate_distribution(self, data, cluster_indices, current_dimension, percentage_of_values):
+    def _estimate_distribution(self, data, cluster_indices, current_dimension, percentage_of_values, weights):
         """ Estimate the distribution using a sample of the data projected to a coordinate axis using scikits kde estimate method
 
         Parametes:
@@ -198,15 +197,22 @@ class Optigrid:
 
         sample_size = min(self.kde_num_samples, len(cluster_indices))
         sample = np.random.choice(cluster_indices, size=sample_size)
-        datapoints = np.expand_dims(data[sample][:,current_dimension], -1)
+        datapoints = data[sample][:,current_dimension]
+        weights_sample = None
+        if not weights is None:
+            weights_sample = weights[sample]
         min_val = np.amin(datapoints)
         max_val = np.amax(datapoints)
 
-        kde = KernelDensity(kernel=self.kde_kernel, bandwidth=self.kde_bandwidth, atol=self.kde_atol, rtol=self.kde_rtol).fit(datapoints)
+        std = datapoints.std(ddof=1)
+        if np.isclose(std, 0):
+            return 0, np.infty
 
-        grid = np.linspace([min_val], [max_val], self.kde_grid_ticks)
-        log_dens = kde.score_samples(grid)
-        return grid, np.exp(log_dens) * percentage_of_values
+        kde = gaussian_kde(dataset=datapoints, bw_method=self.kde_bandwidth / std, weights=weights_sample)
+
+        grid = np.linspace(min_val, max_val, self.kde_grid_ticks)
+        dens = kde.evaluate(grid)
+        return grid, dens * percentage_of_values
 
     def score_samples(self, samples):
         """ For every sample calculates the cluster it belongs to

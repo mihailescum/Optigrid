@@ -80,12 +80,15 @@ class Optigrid:
         grid_data = self._fill_grid(data, cluster_indices, cuts_iteration) # Fill the subgrid based on the cuts
     
         result = []
+        sum_weights_total = np.sum(weights[cluster_indices])
         for i, cluster in enumerate(grid_data):
             if cluster.size==0:
                 continue
+            sum_weights = np.sum(weights[cluster])
+
             if self.verbose:
-                print("In current cluster: {:.2f}% of datapoints".format(percentage_of_values*len(cluster)/len(cluster_indices)*100))
-            subgrid, subresult = self._iteration(data=data, weights=weights, cluster_indices=cluster, percentage_of_values=percentage_of_values*len(cluster)/len(cluster_indices), last_cluster_name=last_cluster_name) # Run Optigrid on every subgrid
+                print("In current cluster: {:.2f}% of datapoints".format(percentage_of_values*sum_weights/sum_weights_total*100))
+            subgrid, subresult = self._iteration(data=data, weights=weights, cluster_indices=cluster, percentage_of_values=percentage_of_values*sum_weights/sum_weights_total, last_cluster_name=last_cluster_name) # Run Optigrid on every subgrid
             grid.add_subgrid(i, subgrid)
             result += subresult
 

@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     normal2_mean = [5, 0, -1]
     normal2_cov = [[1, 0, 0], [0, 1, 0], [0, 0, 0.05]]
-    normal2_samples = 10000
+    normal2_samples = 20000
     normal2 = np.random.multivariate_normal(mean=normal2_mean, cov=normal2_cov, size=normal2_samples)
 
     noise_low = [-10, -10, -10]
@@ -21,6 +21,9 @@ if __name__ == "__main__":
     noise = np.random.uniform(low=noise_low, high=noise_high, size=(noise_samples, 3))
 
     data = np.concatenate((normal1, normal2))#, noise))
+    
+    # Weight the samples from the first population twice as high
+    weights = np.array([2] * normal1_samples + [1] * normal2_samples)
 
     # Now we want to standard scale our data. Although it is not necessary, it is recommended for better selection of the parameters and uniform importance of the dimensions.
     data_scaled = (data - np.mean(data, axis=0)) / np.std(data, axis=0)
@@ -30,10 +33,11 @@ if __name__ == "__main__":
     q = 1 # Number of cutting planes per step
     noise_level = 0.1
     max_cut_score = 0.3
+    bandwidth = 0.1
 
     # Fit Optigrid to the data
-    optigrid = Optigrid(d, q, max_cut_score, noise_level, verbose=True)
-    optigrid.fit(data_scaled)
+    optigrid = Optigrid(d=d, q=q, max_cut_score=max_cut_score, noise_level=noise_level, kde_bandwidth=bandwidth, verbose=True)
+    optigrid.fit(data_scaled, weights=weights)
     ### Output: 
     ###     In current cluster: 47.08% of datapoints
     ###     In current cluster: 52.92% of datapoints

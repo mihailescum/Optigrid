@@ -70,11 +70,14 @@ class Optigrid:
         if not cuts_iteration:
             last_cluster_name[0] += 1
             if self.verbose:
-                print("Found cluster {}".format(last_cluster_name[0]))
+                print("Found cluster {}: {:.2f}% of datapoints".format(last_cluster_name[0], percentage_of_values*100))
 
             return GridLevel(cutting_planes=None, cluster_index=last_cluster_name[0]), [cluster_indices]
     
         cuts_iteration = sorted(cuts_iteration, key=lambda x: x[2])[:self.q] # Sort the cuts based on the density at the minima and select the q best ones
+        if self.verbose:
+            print("Found following cuts: {}".format(cuts_iteration))
+
         grid = GridLevel(cutting_planes=cuts_iteration, cluster_index=None)
         
         grid_data = self._fill_grid(data, cluster_indices, cuts_iteration) # Fill the subgrid based on the cuts
@@ -87,7 +90,7 @@ class Optigrid:
             sum_weights = np.sum(weights[cluster])
 
             if self.verbose:
-                print("In current cluster: {:.2f}% of datapoints".format(percentage_of_values*sum_weights/sum_weights_total*100))
+                print("Evaluating subgrid: {:.2f}% of datapoints".format(percentage_of_values*sum_weights/sum_weights_total*100))
             subgrid, subresult = self._iteration(data=data, weights=weights, cluster_indices=cluster, percentage_of_values=percentage_of_values*sum_weights/sum_weights_total, last_cluster_name=last_cluster_name) # Run Optigrid on every subgrid
             grid.add_subgrid(i, subgrid)
             result += subresult
@@ -208,10 +211,16 @@ class Optigrid:
         max_val = np.amax(datapoints)
 
         std = datapoints.std(ddof=1)
-        if np.isclose(std, 0):
+        if np.isclose(std, 0, atol=1e-6):
             return 0, np.infty
 
-        kde = gaussian_kde(dataset=datapoints, bw_method=self.kde_bandwidth / std, weights=weights_sample)
+        try:
+            kde = gaussian_kde(dataset=datapoints, bw_method=self.kde_bandwidth / std, weights=weights_sample)
+        except:
+            print('Something went wrong when calculating kde.') 
+            print('Std: {}'.format(std))
+            print('data: {}'.format(datapoints))
+            return 0, np.infty
 
         grid = np.linspace(min_val, max_val, self.kde_grid_ticks)
         dens = kde.evaluate(grid)
